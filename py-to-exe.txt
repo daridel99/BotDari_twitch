@@ -1,0 +1,20 @@
+py -3.11 -m PyInstaller --noconfirm --onedir --windowed --icon "./icon.ico" --add-data "./env;." --add-data "./noopaca.png;." --add-data "./opaca.png;." --add-data "./yamete.wav;." --add-data "./kuak.wav;." --add-data "./templates;templates" --add-data "./animacion_chat_class.py;." --add-data "./config.py;." --add-data "./main.py;." --add-data "./websocket_obs_class.py;." --paths "C:/Python311" --paths "C:/Python311/Scripts" --paths "C:/Python311/Lib" --paths "C:/Python311/Lib/site-packages" --paths "C:/Python311/Lib/site-packages/librosa" --paths "C:/Python311/Lib/site-packages/librosa/util" --paths "C:/Python311/Lib/site-packages/librosa/util/example_data" --add-data "C:/Python311/Lib/site-packages/librosa/util/example_data/registry.txt;." --add-data "C:/Python311/Lib/site-packages/librosa/util/example_data;example_data/" --additional-hooks-dir "./extra-hooks"  "./main.py" --hidden-import=librosa.feature --hidden-import=librosa.feature.spectral --hidden-import=librosa.core --hidden-import=win32gui --hidden-import=win32con --hidden-import=pydub
+
+py -3.11 -m PyInstaller --noconfirm --onedir --windowed --icon "./icon.ico" --add-data "./env;." --add-data "./noopaca.png;." --add-data "./opaca.png;." --add-data "./yamete.wav;." --add-data "./kuak.wav;." --add-data "./templates;templates" --add-data "./animacion_chat_class.py;." --add-data "./config.py;." --add-data "./main.py;." --add-data "./websocket_obs_class.py;." --add-data "C:/Python311/Lib/site-packages/librosa/util/example_data/registry.txt;." --add-data "C:/Python311/Lib/site-packages/librosa/util/example_data;example_data/" --additional-hooks-dir "./extra-hooks" "./main.py" --hidden-import=librosa.feature --hidden-import=librosa.feature.spectral --hidden-import=librosa.core --hidden-import=win32gui --hidden-import=win32con --hidden-import=pydub
+
+py -3.11 -m PyInstaller --noconfirm --onedir --windowed --icon "./icon.ico" \
+--add-data "./env;." \
+--add-data "./noopaca.png;." \
+--add-data "./opaca.png;." \
+--add-data "./yamete.wav;." \
+--add-data "./kuak.wav;." \
+--add-data "./templates;templates" \
+--additional-hooks-dir "./extra-hooks" \
+--hidden-import=win32gui \
+--hidden-import=win32con \
+--hidden-import=pydub \
+"./main.py"
+
+py -3.11 -m PyInstaller --noconfirm --onedir --windowed --icon "./icon.ico" --add-data "./env;."  --add-data "./noopaca.png;." --add-data "./opaca.png;." --add-data "./yamete.wav;." --add-data "./kuak.wav;." --add-data "./templates;templates" --add-data "./animacion_chat_class.py;." --add-data "./config.py;." --add-data "./setting.txt;." --add-data "./env;." --add-data "C:/Python311/Lib/site-packages/librosa/util/example_data/registry.txt;." --add-data "C:/Python311/Lib/site-packages/librosa/util/example_data;example_data/" --additional-hooks-dir "./extra-hooks" ./main.py --hidden-import=librosa.feature --hidden-import=librosa.feature.spectral --hidden-import=librosa.core --hidden-import=win32gui --hidden-import=win32con --hidden-import=pydub
+
+py -3.11 -m PyInstaller --noconfirm --onedir --windowed --icon "./icon.ico"  --add-data "./env;."  --add-data "./noopaca.png;."  --add-data "./opaca.png;."  --add-data "./yamete.wav;."  --add-data "./kuak.wav;."  --add-data "./templates;templates"  --add-data "./animacion_chat_class.py;."  --add-data "./config.py;."  --add-data "./setting.txt;."  --add-data "C:/Python311/Lib/site-packages/librosa/util/example_data/registry.txt;."  --add-data "C:/Python311/Lib/site-packages/librosa/util/example_data;example_data/"  --additional-hooks-dir "./extra-hooks"  --paths "C:/Python311"  --paths "C:/Python311/Scripts"  --paths "C:/Python311/Lib"  --paths "C:/Python311/Lib/site-packages"  --paths "C:/Python311/Lib/site-packages/librosa"  --paths "C:/Python311/Lib/site-packages/librosa/util"  --hidden-import=librosa.feature  --hidden-import=librosa.feature.spectral  --hidden-import=librosa.core  --hidden-import=win32gui  --hidden-import=win32con  --hidden-import=pydub  ./main.py

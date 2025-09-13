@@ -1,0 +1,9 @@
+{
+    "prefix":"!",
+    "channel":"daridel_99",
+    "games":"visual studio code,phasmophobia, fornite , roblox, leage of legend, left 4 dead 2,vrchat ,muck,unity,doom 64, Project Zomboid,Escape Room",
+    "set_game":"!setgame",
+    "lenguage_tts":"es,en,fr,de,it,ja,pt,ru",
+    "port_obs": 4455,
+    "psd_obs": ""
+}
