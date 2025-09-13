@@ -1,0 +1,62 @@
+# --- Python ---
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+*.pkl
+*.log
+*.sqlite3
+*.db
+
+# --- Entornos virtuales ---
+venv/
+env/
+.venv/
+ENV/
+
+# --- Configuración y credenciales ---
+env
+.env
+setting.txt
+py-to-exe.txt
+*.ini
+*.cfg
+*.json
+
+# --- Archivos de PyInstaller / builds ---
+build/
+dist/
+*.spec
+
+# --- Archivos temporales ---
+*.tmp
+*.temp
+*.bak
+*.swp
+.DS_Store
+Thumbs.db
+
+# --- Archivos de IDE ---
+.vscode/
+.idea/
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
+*.iml
+
+# --- Archivos de audio/imágenes generados ---
+*.wav
+*.mp3
+*.ogg
+*.png
+*.jpg
+*.jpeg
+*.gif
+
+# --- Otros ---
+logs/
+intentos/
+recursos/
+extra-hooks/

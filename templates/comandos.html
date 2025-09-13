@@ -1,0 +1,51 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <title>Gestión de Comandos</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 20px;
+            background: #f4f4f4;
+        }
+        h1 {
+            color: #333;
+        }
+        .comando {
+            margin: 8px 0;
+            padding: 5px;
+            background: #fff;
+            border-radius: 5px;
+        }
+        label {
+            margin-left: 8px;
+        }
+        button {
+            margin-top: 15px;
+            padding: 8px 16px;
+            border: none;
+            background: #0078D7;
+            color: #fff;
+            font-size: 14px;
+            border-radius: 5px;
+            cursor: pointer;
+        }
+        button:hover {
+            background: #005a9e;
+        }
+    </style>
+</head>
+<body>
+    <h1>Habilitar / Deshabilitar Comandos</h1>
+    <form method="post">
+        {% for comando, estado in comandos.items() %}
+            <div class="comando">
+                <input type="checkbox" id="{{ comando }}" name="{{ comando }}" {% if estado %}checked{% endif %}>
+                <label for="{{ comando }}">!{{ comando }}</label>
+            </div>
+        {% endfor %}
+        <button type="submit">Guardar cambios</button>
+    </form>
+</body>
+</html>
