@@ -19,6 +19,7 @@ env
 .env
 setting.txt
 py-to-exe.txt
+test.py
 *.ini
 *.cfg
 *.json
