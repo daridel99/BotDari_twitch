@@ -19,7 +19,7 @@ mediante un panel web.
 ### 1. Clonar el repositorio
 
 ``` bash
-git clone https://github.com/daridel99/twitch-bot.git
+git clone https://github.com/daridel99/BotDari_twitch.git
 cd twitch-bot
 ```
 
