@@ -12,6 +12,13 @@ build/
 develop-eggs/
 dist/
 downloads/
+templates/
+*.png
+*.icon
+*.wav
+py-to-exe.txt
+setting.txt
+test.py
 eggs/
 .eggs/
 lib/
