@@ -2,6 +2,7 @@
 import sys
 import json
 import requests
+from typing import Optional
 import twitchio
 import webbrowser
 import tkinter as tk
@@ -16,10 +17,11 @@ from unidecode import unidecode
 from twitchio.ext import commands, routines
 from tkinter import messagebox as MessageBox
 from websocket_obs_class import OBSController
-from config import LANGUAGE_TTS, URL_WEBHOOK_DS, ACCESS_TOKEN_SECRET, CLIENT_ID_CLIP, AUTHORIZATION_CLIP, PREFIX, CHANNEL, SET_GAME, JUEGOS
+from config import LANGUAGE_TTS, URL_WEBHOOK_DS, CLIENT_SECRET, ACCESS_TOKEN_SECRET, CLIENT_ID_CLIP, AUTHORIZATION_CLIP, PREFIX, CHANNEL, SET_GAME, JUEGOS, STEAM_KEY, STEAM_ID
 from flask import Flask, render_template, request, url_for, redirect, jsonify
 from flask_mysqldb import MySQL
 from functools import wraps
+import random
 
 ws= OBSController()
 
@@ -27,8 +29,71 @@ LANGUAGE_TTS_COMBO = 'es'
 
 # Variable global para indicar si la funcionalidad está habilitada o no
 FUNCIONALIDAD_HABILITADA = {}
+FUNCIONALIDAD_HABILITADA['cambio_scena']=False
 RUTINAS_ACTIVAS = {}
 is_on_obs = False
+
+def obtener_clip(broadcaster_id: str, first: int = 5):
+    
+    try:
+        url = f"https://api.twitch.tv/helix/clips?broadcaster_id={broadcaster_id}&first={first}"
+        print(url)
+        headers = {
+            "Authorization": f"Bearer {AUTHORIZATION_CLIP}",
+            "Client-Id": CLIENT_ID_CLIP
+        }
+        print(headers)
+        resp = requests.get(url, headers=headers)
+        data = resp.json().get("data", [])
+        print(data)
+        if not data:
+            print("⚠️ No encontré clips recientes.")
+            return None
+        else:
+            clip = random.choice(data)  # elige un clip aleatorio
+            print("🎬 Clip seleccionado:")
+            print(f"Título: {clip['title']}")
+            print(f"URL: {clip['url']}")
+            print(f"Duración: {clip['duration']}s")
+            mp4_url = clip["thumbnail_url"].split("-preview-")[0] + ".mp4"
+            return {
+                "id": clip["id"],
+                "title": clip.get("title", "Sin título"),
+                "url": clip["url"],
+                "embed_url": clip["embed_url"],
+                "mp4": mp4_url,
+                "duration": clip.get("duration", 30),
+                "broadcaster": clip.get("broadcaster_name")
+            }
+    except Exception as e:
+        print(f"[Clips] Error al obtener clip: {e}")
+        return None
+
+
+def obtener_juego_steam(steam_id: str, api_key: str) -> Optional[str]:
+    """
+    Consulta la API de Steam para ver si el steam_id está jugando algo.
+    Devuelve el nombre del juego si está jugando (gameextrainfo), o None si no.
+    """
+    if not api_key or not steam_id:
+        return None
+    try:
+        url = f"http://api.steampowered.com/ISteamUser/GetPlayerSummaries/v2/?key={api_key}&steamids={steam_id}"
+        resp = requests.get(url, timeout=8)
+        if resp.status_code != 200:
+            print(f"[Steam] Error en la solicitud: {resp.status_code}")
+            return None
+        data = resp.json()
+        players = data.get('response', {}).get('players', [])
+        if not players:
+            return None
+        player = players[0]
+        # 'gameextrainfo' aparece solo si está en un juego
+        juego = player.get('gameextrainfo')
+        return juego  # puede ser string o None
+    except Exception as e:
+        print(f"[Steam] Excepción al consultar Steam: {e}")
+        return None
 
 def play_sound(file):
     pygame.mixer.init()
@@ -301,12 +366,14 @@ class TwitchBotGUI:
     
     def Switch(self):
         global is_on_obs
+        global FUNCIONALIDAD_HABILITADA
         
         if is_on_obs:
             self.button_obs.config(text= "Off")
             self.label_obs.config(text = "Obs Off", 
                             fg = "grey")
             is_on_obs = False
+
             ws.stop()
 
         else:
@@ -372,9 +439,19 @@ class Bot(commands.Bot):
         ws.start()
         print("init de bot" , ws.is_connected())
 
-        @routines.routine(minutes=0.1)
+        @routines.routine(minutes=1)
         async def set_game():
-            Juego_activo = listar_aplicaciones()
+
+            juego_steam = None
+            try:
+                juego_steam = obtener_juego_steam(STEAM_ID, STEAM_KEY)
+            except Exception as e:
+                print(f"Error al obtener juego desde Steam: {e}")
+
+            if juego_steam:
+                Juego_activo = juego_steam
+            else:
+                Juego_activo = listar_aplicaciones()
             Juego_actual = await get_game(self)
             scene = "Just Chatting" if ("Just Chatting").lower() == str(Juego_actual).lower() else "Juego"
             await cambio_scena(self,scene)
@@ -546,19 +623,29 @@ class Bot(commands.Bot):
     @comando_habilitable("so")
     async def so(self, ctx: commands.Context, user: twitchio.PartialChatter | None) -> None:
         if ctx.author.is_mod:
-            try:    
+            try:
                 if user is None:
                     user = ctx.author
-                #libreria twitchio
-                info = await self.fetch_channel(broadcaster=user.name)
-                print(user.name,info)
-                
-                await ctx.send(f'Caiganle a esta personita chida @{info.user.name} en su canal https://www.twitch.tv/{info.user.name} que estabá jugando {info.game_name} se los agradeceré mucho GlitchCat GlitchCat')
 
-            except requests.exceptions.RequestException as e:
-                # Manejar excepciones de solicitudes HTTP
-                print(f"Error en la solicitud HTTP: {e}")
-                await ctx.send(f'/me Ocurrió un error. Por favor, inténtalo nuevamente.')
+                info = await self.fetch_channel(broadcaster=user.name)
+                await ctx.send(f'💜 Sigan a @{info.user.name} en https://www.twitch.tv/{info.user.name} '
+                            f'¡Estaba jugando {info.game_name}!')
+
+                clip = obtener_clip(info.user.id, first=5)
+                if clip:
+                    await ctx.send(f'🎬 Mira este clip: {clip["url"]}')
+
+                    # Mostrar animación en ventana pygame
+                    def mostrar():
+                        anim = animacion_chat_class.AnimacionClip(clip["mp4"], clip["duration"])
+                        anim.reproducir_clip()
+
+                    #threading.Thread(target=mostrar, daemon=True).start()
+                else:
+                    await ctx.send(f'/me No encontré clips recientes de @{info.user.name}.')
+            except Exception as e:
+                print(f"[Clips] Error en !so: {e}")
+                await ctx.send(f'/me Ocurrió un error al intentar mostrar un clip.')
 
     @commands.command()
     @comando_habilitable("salir")
