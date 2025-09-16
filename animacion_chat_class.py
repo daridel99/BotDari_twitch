@@ -4,6 +4,9 @@ from pydub import AudioSegment
 from pathlib import Path
 import numpy as np
 import librosa
+from tkvideo import tkvideo
+import imageio_ffmpeg as ffmpeg  # instalar: pip install imageio-ffmpeg
+import tkinter as tk
 from librosa.feature import zero_crossing_rate
 import soundfile as sf
 import time
