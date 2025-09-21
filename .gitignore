@@ -16,10 +16,11 @@ templates/
 *.png
 *.icon
 *.wav
-py-to-exe.txt
-setting.txt
+*.mp4
 test.py
+auth.py
 eggs/
+clips/
 .eggs/
 lib/
 lib64/
@@ -42,6 +43,8 @@ MANIFEST
 # Installer logs
 pip-log.txt
 pip-delete-this-directory.txt
+py-to-exe.txt
+setting.txt
 
 # Unit test / coverage reports
 htmlcov/
