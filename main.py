@@ -2,6 +2,7 @@
 import sys
 import json
 import requests
+from config import LANGUAGE_TTS, URL_WEBHOOK_DS, CLIENT_SECRET, ACCESS_TOKEN_SECRET, CLIENT_ID_CLIP, PREFIX, CHANNEL, SET_GAME, JUEGOS, STEAM_KEY, STEAM_ID, ACCESS_TOKEN_BROADCAST, REFRESH_TOKEN
 from typing import Optional
 import twitchio
 import webbrowser
@@ -17,11 +18,13 @@ from unidecode import unidecode
 from twitchio.ext import commands, routines
 from tkinter import messagebox as MessageBox
 from websocket_obs_class import OBSController
-from config import LANGUAGE_TTS, URL_WEBHOOK_DS, CLIENT_SECRET, ACCESS_TOKEN_SECRET, CLIENT_ID_CLIP, AUTHORIZATION_CLIP, PREFIX, CHANNEL, SET_GAME, JUEGOS, STEAM_KEY, STEAM_ID
 from flask import Flask, render_template, request, url_for, redirect, jsonify
 from flask_mysqldb import MySQL
 from functools import wraps
+import unicodedata
 import random
+from auth import refresh_tokens
+import yt_dlp
 
 ws= OBSController()
 
@@ -33,19 +36,94 @@ FUNCIONALIDAD_HABILITADA['cambio_scena']=False
 RUTINAS_ACTIVAS = {}
 is_on_obs = False
 
+def descargar_clip_twitch(url, output_dir=r"C:\Users\daria\Desktop\clips"):
+    """Descarga un clip de Twitch y retorna la ruta del archivo."""
+    os.makedirs(output_dir, exist_ok=True)
+    ydl_opts = {
+        "format": "mp4",
+        "outtmpl": os.path.join(output_dir, "%(id)s.%(ext)s"),
+    }
+    with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+        info = ydl.extract_info(url, download=True)
+        return ydl.prepare_filename(info)  # ruta completa del archivo
+    
+def normalizar(texto: str) -> str:
+    """Convierte a minúsculas, quita acentos y normaliza & -> and"""
+    texto = unicodedata.normalize("NFKD", texto).encode("ASCII", "ignore").decode("utf-8")
+    return texto.lower().replace("&", "and").strip()
+
+def update_twitch_category(broadcaster_id: str, category_name: str):
+    """
+    Busca el ID de una categoría usando /helix/search/categories
+    y actualiza el canal con esa categoría.
+    """
+    headers = {
+        "Authorization": f"Bearer {ACCESS_TOKEN_BROADCAST}",  # 👈 usa tu token con scope channel:manage:broadcast
+        "Client-Id": CLIENT_ID_CLIP
+    }
+
+    # 1) Buscar la categoría por nombre
+    search_url = f"https://api.twitch.tv/helix/search/categories?query={category_name}"
+    resp = requests.get(search_url, headers=headers)
+
+    if resp.status_code != 200:
+        if resp.status_code == 401:
+            new_access, new_refresh = refresh_tokens(REFRESH_TOKEN)
+            if new_access:
+            # actualiza variable global sin depender de .env
+                globals()["ACCESS_TOKEN_BROADCAST"] = new_access
+                globals()["REFRESH_TOKEN"] = new_refresh
+                return update_twitch_category(broadcaster_id, category_name)  # reintenta SOLO una vez
+        elif resp.status_code == 400:
+            print(f"❌ Error 400 (Bad Request). Revisa el query o parámetros: {resp.text}")
+        else:
+            print(f"❌ Error buscando categoría: {resp.status_code} {resp.text}")
+        return False
+
+    data = resp.json().get("data", [])
+    if not data:
+        print(f"❌ No se encontró ninguna categoría con '{category_name}'")
+        return False
+
+    # 2) Intentar coincidencia exacta (ignorando mayúsculas/acentos/&)
+    category_id, real_name = None, None
+    category_norm = normalizar(category_name)
+
+    for cat in data:
+        if normalizar(cat["name"]) == category_norm:
+            category_id = cat["id"]
+            real_name = cat["name"]
+            break
+
+    # 3) Si no hay exacta → usar la primera sugerencia
+    if not category_id:
+        category_id = data[0]["id"]
+        real_name = data[0]["name"]
+        print(f"⚠️ '{category_name}' no coincidió exactamente. Usando '{real_name}' (ID={category_id})")
+
+    # 4) PATCH para actualizar la categoría del canal
+    patch_url = f"https://api.twitch.tv/helix/channels?broadcaster_id={broadcaster_id}"
+    payload = {"game_id": category_id}
+
+    resp = requests.patch(patch_url, headers=headers, json=payload)
+    if resp.status_code == 204:
+        print(f"✅ Categoría cambiada a: {real_name} (ID={category_id})")
+        return True
+    else:
+        print(f"❌ Error al cambiar categoría: {resp.status_code} {resp.text}")
+        return False
+
+
 def obtener_clip(broadcaster_id: str, first: int = 5):
     
     try:
         url = f"https://api.twitch.tv/helix/clips?broadcaster_id={broadcaster_id}&first={first}"
-        print(url)
         headers = {
-            "Authorization": f"Bearer {AUTHORIZATION_CLIP}",
+            "Authorization": f"Bearer {ACCESS_TOKEN_BROADCAST}",#AUTHORIZATION_CLIP
             "Client-Id": CLIENT_ID_CLIP
         }
-        print(headers)
         resp = requests.get(url, headers=headers)
         data = resp.json().get("data", [])
-        print(data)
         if not data:
             print("⚠️ No encontré clips recientes.")
             return None
@@ -76,6 +154,7 @@ def obtener_juego_steam(steam_id: str, api_key: str) -> Optional[str]:
     Devuelve el nombre del juego si está jugando (gameextrainfo), o None si no.
     """
     if not api_key or not steam_id:
+        print(f"campos vacios de steam")
         return None
     try:
         url = f"http://api.steampowered.com/ISteamUser/GetPlayerSummaries/v2/?key={api_key}&steamids={steam_id}"
@@ -456,7 +535,9 @@ class Bot(commands.Bot):
             scene = "Just Chatting" if ("Just Chatting").lower() == str(Juego_actual).lower() else "Juego"
             await cambio_scena(self,scene)
             if str(Juego_actual).lower() != Juego_activo.lower():
-                await send_menssage(f'{SET_GAME} {Juego_activo}',self)
+                info = await self.fetch_channel(broadcaster=CHANNEL)
+                update_twitch_category(info.user.id, Juego_activo)
+                #await send_menssage(f'{SET_GAME} {Juego_activo}',self)
                 
         texto = '¿Desea habilitar el cambio de categoría automático? \n (Esta en versión de prueba)'
         enable_setgame = MessageBox.askokcancel("Habilitar", texto)
@@ -531,15 +612,16 @@ class Bot(commands.Bot):
         await ctx.send(f'⣿⣿⣷⡁⢆⠈⠕⢕⢂⢕⢂⢕⢂⢔⢂⢕⢄⠂⣂⠂⠆⢂⢕⢂⢕⢂⢕⢂⢕⢂ ⣿⣿⣿⡷⠊⡢⡹⣦⡑⢂⢕⢂⢕⢂⢕⢂⠕⠔⠌⠝⠛⠶⠶⢶⣦⣄⢂⢕⢂⢕ ⣿⣿⠏⣠⣾⣦⡐⢌⢿⣷⣦⣅⡑⠕⠡⠐⢿⠿⣛⠟⠛⠛⠛⠛⠡⢷⡈⢂⢕⢂ ⠟⣡⣾⣿⣿⣿⣿⣦⣑⠝⢿⣿⣿⣿⣿⣿⡵⢁⣤⣶⣶⣿⢿⢿⢿⡟⢻⣤⢑⢂ ⣾⣿⣿⡿⢟⣛⣻⣿⣿⣿⣦⣬⣙⣻⣿⣿⣷⣿⣿⢟⢝⢕⢕⢕⢕⢽⣿⣿⣷⣔ ⣿⣿⠵⠚⠉⢀⣀⣀⣈⣿⣿⣿⣿⣿⣿⣿⣿⣿⣗⢕⢕⢕⢕⢕⢕⣽⣿⣿⣿⣿ ⢷⣂⣠⣴⣾⡿⡿⡻⡻⣿⣿⣴⣿⣿⣿⣿⣿⣿⣷⣵⣵⣵⣷⣿⣿⣿⣿⣿⣿⡿ ⢌⠻⣿⡿⡫⡪⡪⡪⡪⣺⣿⣿⣿⣿⣿⠿⠿⢿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⠃ ⠣⡁⠹⡪⡪⡪⡪⣪⣾⣿⣿⣿⣿⠋⠐⢉⢍⢄⢌⠻⣿⣿⣿⣿⣿⣿⣿⣿⠏⠈ ⡣⡘⢄⠙⣾⣾⣾⣿⣿⣿⣿⣿⣿⡀⢐⢕⢕⢕⢕⢕⡘⣿⣿⣿⣿⣿⣿⠏⠠⠈ ⠌⢊⢂⢣⠹⣿⣿⣿⣿⣿⣿⣿⣿⣧⢐⢕⢕⢕⢕⢕⢅⣿⣿⣿⣿⡿⢋⢜⠠⠈ ⠄⠁⠕⢝⡢⠈⠻⣿⣿⣿⣿⣿⣿⣿⣷⣕⣑⣑⣑⣵⣿⣿⣿⡿⢋⢔⢕⣿⠠⠈ ⠨⡂⡀⢑⢕⡅⠂⠄⠉⠛⠻⠿⢿⣿⣿⣿⣿⣿⣿⣿⣿⡿⢋⢔⢕⢕⣿⣿⠠⠈ ⠄⠪⣂⠁⢕⠆⠄⠂⠄⠁⡀⠂⡀⠄⢈⠉⢍⢛⢛⢛⢋⢔⢔⢕⢕⢔⣿⣿⠠⠈')
         play_sound("yamete.wav")
 
-    @commands.cooldown(rate=1, per=10, bucket=commands.Bucket.channel) #1 vez cada 10seg por canal
+
     @commands.command(aliases=['OMG'])
     @comando_habilitable("omg")
+    @commands.cooldown(rate=1, per=10, bucket=commands.Bucket.channel) #1 vez cada 10seg por canal
     async def omg(self, ctx: commands.Context):
         await ctx.send(f'⣿⣿⣿⣿⣿⢟⡛⣍⢭⢩⡹⡛⢿⣿⡿⠿⣛⢩⡩⡩⡛⢿⣿⣿⣿⣿⣿⣿⣿⣿ ⣿⣿⡿⡫⡢⣷⢸⢜⢜⠜⠜⢎⢇⢆⠪⣪⢪⡪⡪⡎⡾⡆⣍⢻⣿⣿⣿⣿⣿⣿ ⣿⡟⡜⣜⠼⡘⡌⡖⣜⢜⡕⡖⣆⢅⡃⢑⢅⢭⡨⢬⢌⢎⣘⠠⠻⣿⣿⣿⣿⣿ ⡟⡜⣼⢸⢸⢪⢺⡸⡘⣬⣬⣶⣶⣶⣾⣬⣕⠱⣑⣥⣥⣵⣬⣭⣭⣌⠛⣿⣿⣿ ⠰⡱⡽⡸⡱⢙⣴⣶⣿⣿⣿⣿⡿⠋⠙⢻⣿⡎⣿⣿⣿⣿⣿⠟⠙⢻⣷⡌⣿⣿ ⡪⡪⡺⡸⡱⡱⡌⡛⠿⣿⣿⣿⣷⣭⣴⣿⡿⠱⣿⣿⣿⣿⣿⣧⣥⡾⠿⢇⣿⣿ ⡪⡪⣣⢫⢺⡸⡜⡬⡡⣂⢍⠍⡍⡍⡕⠐⡨⡰⣰⢰⡰⡰⡰⡔⣔⢌⣥⣾⣿⣿ ⡪⡪⡎⣎⢇⢇⢧⢳⢹⢰⢕⠵⣑⢡⢲⢩⡪⣪⢢⡁⢃⡩⣈⢬⠰⣿⣿⣿⣿⣿ ⡪⡪⡎⡮⡪⡣⡇⡗⡕⡇⡧⡳⡸⡪⡣⡣⡳⡱⡱⡍⡖⡼⡸⡸⡱⡘⣿⣿⣿⣿ ⡪⡪⡺⡸⣪⠺⡘⣈⢃⢋⠪⠎⠞⡜⣕⢝⡜⣕⢵⢱⡹⡸⡪⡣⠫⢒⠘⣿⣿⣿ ⡪⡪⣣⢫⠐⡜⡨⡐⡅⢕⢑⢑⢑⠆⠆⠆⠆⡬⡨⡡⡩⡨⡰⠰⢑⢡⣵⣿⣿⣿ ⡪⣪⢪⡘⢕⠤⠤⡤⢤⢡⢌⡊⣂⡑⠅⠣⠱⠐⠢⠢⠢⡒⡘⠜⢌⣸⣿⣿⣿⣿ ⠪⢪⢪⢎⢖⢭⢣⡣⣣⢣⡣⡣⡣⡪⡝⡍⡇⣏⢭⠣⢫⣨⣶⣾⣿⣿⣿⣿⣿⣿ ⢉⢒⠰⠤⢅⢇⡓⣑⢃⡓⣑⣙⣘⣊⢪⠺⢘⢈⢤⣾⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿ ⢐⢐⢐⠔⡐⠀⠢⢐⢐⠠⠡⢂⠢⢐⠐⠌⡂⡂⡂⠌⠻⣿⣿⣿⣿⣿⣿⣿⣿⣿')
 
-    @commands.cooldown(rate=1, per=10, bucket=commands.Bucket.channel) #1 vez cada 10seg por canal
     @commands.command(aliases=["UWU"])
     @comando_habilitable("uwu")
+    @commands.cooldown(rate=1, per=10, bucket=commands.Bucket.channel) #1 vez cada 10seg por canal
     async def uwu(self, ctx: commands.Context):
         await ctx.send(f'⡆⣐⢕⢕⢕⢕⢕⢕⢕⢕⠅⢗⢕⢕⢕⢕⢕⢕⢕⠕⠕⢕⢕⢕⢕⢕⢕⢕⢕⢕ ⢐⢕⢕⢕⢕⢕⣕⢕⢕⠕⠁⢕⢕⢕⢕⢕⢕⢕⢕⠅⡄⢕⢕⢕⢕⢕⢕⢕⢕⢕ ⢕⢕⢕⢕⢕⠅⢗⢕⠕⣠⠄⣗⢕⢕⠕⢕⢕⢕⠕⢠⣿⠐⢕⢕⢕⠑⢕⢕⠵⢕ ⢕⢕⢕⢕⠁⢜⠕⢁⣴⣿⡇⢓⢕⢵⢐⢕⢕⠕⢁⣾⢿⣧⠑⢕⢕⠄⢑⢕⠅⢕ ⢕⢕⠵⢁⠔⢁⣤⣤⣶⣶⣶⡐⣕⢽⠐⢕⠕⣡⣾⣶⣶⣶⣤⡁⢓⢕⠄⢑⢅⢑ ⠍⣧⠄⣶⣾⣿⣿⣿⣿⣿⣿⣷⣔⢕⢄⢡⣾⣿⣿⣿⣿⣿⣿⣿⣦⡑⢕⢤⠱⢐ ⢠⢕⠅⣾⣿⠋⢿⣿⣿⣿⠉⣿⣿⣷⣦⣶⣽⣿⣿⠈⣿⣿⣿⣿⠏⢹⣷⣷⡅⢐ ⣔⢕⢥⢻⣿⡀⠈⠛⠛⠁⢠⣿⣿⣿⣿⣿⣿⣿⣿⡀⠈⠛⠛⠁⠄⣼⣿⣿⡇⢔ ⢕⢕⢽⢸⢟⢟⢖⢖⢤⣶⡟⢻⣿⡿⠻⣿⣿⡟⢀⣿⣦⢤⢤⢔⢞⢿⢿⣿⠁⢕ ⢕⢕⠅⣐⢕⢕⢕⢕⢕⣿⣿⡄⠛⢀⣦⠈⠛⢁⣼⣿⢗⢕⢕⢕⢕⢕⢕⡏⣘⢕ ⢕⢕⠅⢓⣕⣕⣕⣕⣵⣿⣿⣿⣾⣿⣿⣿⣿⣿⣿⣿⣷⣕⢕⢕⢕⢕⡵⢀⢕⢕ ⢑⢕⠃⡈⢿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⢃⢕⢕⢕ ⣆⢕⠄⢱⣄⠛⢿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⠿⢁⢕⢕⠕⢁ ⣿⣦⡀⣿⣿⣷⣶⣬⣍⣛⣛⣛⡛⠿⠿⠿⠛⠛⢛⣛⣉⣭⣤⣂⢜⠕⢑⣡⣴⣿')
     
@@ -595,6 +677,7 @@ class Bot(commands.Bot):
         animacion_chat(mytext)
     
     @commands.command(aliases=["CLIP"])
+    @commands.cooldown(rate=1, per=10, bucket=commands.Bucket.channel) #1 vez cada 10seg por canal
     @comando_habilitable("clip")
     async def clip(self, ctx:commands.Context):
         try:    
@@ -603,7 +686,7 @@ class Bot(commands.Bot):
             #con la api de twitch "post"
             url = f'https://api.twitch.tv/helix/clips?broadcaster_id={info.user.id}'
             headers = {
-                'Authorization': f"Bearer {AUTHORIZATION_CLIP}",
+                'Authorization': f"Bearer {ACCESS_TOKEN_BROADCAST}",#AUTHORIZATION_CLIP
                 'Client-Id': f"{CLIENT_ID_CLIP}"
                         }
             response = requests.post(url, headers=headers)
@@ -631,10 +714,11 @@ class Bot(commands.Bot):
                 await ctx.send(f'💜 Sigan a @{info.user.name} en https://www.twitch.tv/{info.user.name} '
                             f'¡Estaba jugando {info.game_name}!')
 
-                clip = obtener_clip(info.user.id, first=5)
+                clip = obtener_clip(info.user.id, first=10)
                 if clip:
                     await ctx.send(f'🎬 Mira este clip: {clip["url"]}')
-
+                    file_path=descargar_clip_twitch(clip["url"])
+                    ws.set_media_source("ClipTwitch", file_path)
                     # Mostrar animación en ventana pygame
                     def mostrar():
                         anim = animacion_chat_class.AnimacionClip(clip["mp4"], clip["duration"])
